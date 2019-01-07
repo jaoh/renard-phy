@@ -7,6 +7,8 @@ import subprocess
 import argparse
 import sys
 import os
+# add support to write our frames to a pcap file
+from scapy.all import wrpcap, conf, Packet, StrField
 
 ###########################
 #    Parse CLI argumets   #
@@ -15,6 +17,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("wavfile", help="WAV file containing the downlink recording to be demodulated")
 parser.add_argument("-p", "--plot", action="store_true", default = False, help = "Use matplotlib to display the baseband signal and where in that baseband signal a preamble was detected")
 parser.add_argument("-d", "--decode", action="store_true", default = False, help = "Use renard to brute-force-decode payload content of downlink frame")
+parser.add_argument("-f", "--file", help = "Write the decode bytes to the specified file")
 args = parser.parse_args()
 
 ###########################
@@ -53,6 +56,13 @@ def nextpow2(limit):
 	while n < limit:
 		n = n * 2
 	return int(n / 2)
+
+###########################
+# Wrapper Class for Scapy #
+###########################
+class Sigfox(Packet):
+    name = "SigfoxPacket "
+    fields_desc=[ StrField("Frame", "")]
 
 ###########################
 #     Recording Input     #
@@ -122,6 +132,9 @@ if args.plot:
 ############################
 #       Turn into Bits     #
 ############################
+if args.file:
+        print("write frames to file "+args.file)
+
 first_sample_offset = int(preamble_offset + samples_per_symbol / 2)
 
 bits = ""
@@ -131,6 +144,13 @@ for i in (np.arange(0, FRAMELENGTH) * samples_per_symbol + first_sample_offset):
 hexstring = str(hex(int(bits, 2)))
 hexstring_without_preamble = hexstring[int(2 + len(DOWNLINK_PREAMBLE) / 4):]
 print("Frame: " + hexstring_without_preamble)
+
+if args.file:
+	pkt = Sigfox()
+	pkt.Frame=hexstring_without_preamble
+	# use linktype 147 which is reserved for private use
+	wrpcap(args.file, pkt, append=True, linktype=147)
+
 if args.decode:
 	try:
 		print(subprocess.check_output(RENARD_CMD + ["-f", hexstring_without_preamble, "-c"], stderr = subprocess.STDOUT).decode('utf-8'))

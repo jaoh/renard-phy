@@ -6,7 +6,9 @@ import subprocess
 import argparse
 import sys
 import os
-
+# add support to write our frames to a pcap file
+from scapy.all import wrpcap, conf, Packet, StrField
+ 
 ###########################
 #    Parse CLI argumets   #
 ###########################
@@ -14,6 +16,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("wavfile", help="WAV file containing the uplink recording to be demodulated")
 parser.add_argument("-p", "--plot", action="store_true", default = False, help = "Use matplotlib to display the baseband signal and where in that baseband signal a preamble was detected")
 parser.add_argument("-d", "--decode", action="store_true", default = False, help = "Use renard to decode content of uplink frame")
+parser.add_argument("-f", "--file", help = "Write the decode bytes to the specified file")
 args = parser.parse_args()
 
 ###########################
@@ -63,6 +66,14 @@ def nextpow2(limit):
 	while n < limit:
 		n = n * 2
 	return int(n / 2)
+
+###########################
+# Wrapper Class for Scapy #
+###########################
+class Sigfox(Packet):
+    name = "SigfoxPacket "
+    fields_desc=[ StrField("Frame", "")]
+
 
 # frequencyAdjustmentFactor:
 # Proportion by which the "VCO" frequency will be adjusted from given frequency offset estimate in
@@ -182,6 +193,9 @@ print("Found " + str(len(preamble_offsets)) + " Preambles!")
 def hammingDistance(str1, str2):
 	return sum([1 if str1[i] == str2[i] else 0 for i in range(len(str1))])
 
+if args.file:
+	print("write frames to file "+args.file)
+
 for count, preamble_offset in enumerate(preamble_offsets):
 	data_offset = int(preamble_offset + SILENCE_BEFORE_PREAMBLE * Fs)
 
@@ -227,3 +241,9 @@ for count, preamble_offset in enumerate(preamble_offsets):
 			print(RENARD_BIN + " subprocess failed. Error:")
 			print(e.output.decode("UTF-8"))
 			sys.exit(0)
+	if args.file:
+		pkt = Sigfox()
+		pkt.Frame=hexstring
+		# use linktype 147 which is reserved for private use
+		wrpcap(args.file, pkt, append=True, linktype=147)
+
